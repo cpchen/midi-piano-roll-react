@@ -161,6 +161,52 @@ button {
   border-color: #4ecca3;
 }
 
+.tempo-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tempo-control label {
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
+.tempo-control input {
+  width: 70px;
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 1px solid #0f3460;
+  background: #16213e;
+  color: #eee;
+  font-size: 14px;
+}
+
+.tempo-control input:hover {
+  border-color: #4ecca3;
+}
+
+.tempo-control input:focus {
+  outline: none;
+  border-color: #4ecca3;
+}
+
+.tap-btn {
+  padding: 8px 16px;
+  background: #4ecca3;
+  color: #1a1a2e;
+  font-weight: bold;
+}
+
+.tap-btn:hover {
+  background: #5fffb8;
+}
+
+.tap-btn:active {
+  background: #3ba57f;
+  transform: scale(0.95);
+}
+
 .info {
   font-size: 0.9rem;
   color: #888;

@@ -20,6 +20,7 @@ interface Props {
   audioUrl?: string | null;
   pixelsPerSecond?: number;
   playbackSpeed?: number;
+  tempo?: number;
   minNote?: number;
   maxNote?: number;
   onPlaybackEnd?: () => void;
@@ -70,7 +71,7 @@ function getNoteX(note: number, minNote: number, whiteKeyWidth: number): number 
 }
 
 export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
-  ({ notes, audioUrl, pixelsPerSecond = 100, playbackSpeed = 1, minNote = 21, maxNote = 108, onPlaybackEnd, onActiveNotesChange }, ref) => {
+  ({ notes, audioUrl, pixelsPerSecond = 100, playbackSpeed = 1, tempo = 120, minNote = 21, maxNote = 108, onPlaybackEnd, onActiveNotesChange }, ref) => {
     const rollCanvasRef = useRef<HTMLCanvasElement>(null);
     const keysCanvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -280,11 +281,13 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
         ctx.stroke();
       }
 
-      // Draw vertical beat lines
-      const secondsPerBeat = 0.5;
-      for (let t = 0; t < duration + 4; t += secondsPerBeat) {
+      // Draw vertical beat lines based on tempo
+      const secondsPerBeat = 60 / tempo;
+      const beatsPerBar = 4;
+      for (let beat = 0; beat * secondsPerBeat < duration + 4; beat++) {
+        const t = beat * secondsPerBeat;
         const x = t * pixelsPerSecond;
-        const isBar = Math.round(t / secondsPerBeat) % 4 === 0;
+        const isBar = beat % beatsPerBar === 0;
 
         ctx.strokeStyle = isBar ? '#3a3a6e' : '#2a2a4e';
         ctx.lineWidth = isBar ? 2 : 1;
@@ -321,7 +324,7 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
         ctx.roundRect(x + 1, y, w - 2, h, 3);
         ctx.stroke();
       });
-    }, [notes, rollWidth, rollHeight, totalNotes, minNote, maxNote, pixelsPerSecond, duration]);
+    }, [notes, rollWidth, rollHeight, totalNotes, minNote, maxNote, pixelsPerSecond, duration, tempo]);
 
     function adjustColor(hex: string, amount: number): string {
       const num = parseInt(hex.slice(1), 16);

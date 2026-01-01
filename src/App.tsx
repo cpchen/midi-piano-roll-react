@@ -15,7 +15,37 @@ function App() {
   const [error, setError] = useState('');
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [zoom, setZoom] = useState(100);
+  const [tempo, setTempo] = useState(120);
   const pianoRollRef = useRef<HorizontalPianoRollHandle>(null);
+  const tapTimesRef = useRef<number[]>([]);
+
+  const handleTapTempo = useCallback(() => {
+    const now = Date.now();
+    const taps = tapTimesRef.current;
+
+    // Reset if last tap was more than 2 seconds ago
+    if (taps.length > 0 && now - taps[taps.length - 1] > 2000) {
+      tapTimesRef.current = [];
+    }
+
+    taps.push(now);
+
+    // Keep only last 8 taps
+    if (taps.length > 8) {
+      taps.shift();
+    }
+
+    // Calculate BPM from at least 2 taps
+    if (taps.length >= 2) {
+      const intervals = [];
+      for (let i = 1; i < taps.length; i++) {
+        intervals.push(taps[i] - taps[i - 1]);
+      }
+      const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      const bpm = Math.round(60000 / avgInterval);
+      setTempo(Math.min(300, Math.max(1, bpm)));
+    }
+  }, []);
 
   const loadMidi = useCallback(async (file: File) => {
     try {
@@ -36,6 +66,12 @@ function App() {
       });
 
       allNotes.sort((a, b) => a.startTime - b.startTime);
+
+      // Extract tempo from MIDI if available
+      if (midi.header.tempos && midi.header.tempos.length > 0) {
+        const midiTempo = Math.round(midi.header.tempos[0].bpm);
+        setTempo(midiTempo);
+      }
 
       setNotes(allNotes);
       setMidiInfo(`${file.name} | ${midi.duration.toFixed(1)}s | ${allNotes.length} notes`);
@@ -210,6 +246,19 @@ function App() {
               <option value={400}>400%</option>
             </select>
           </div>
+          <div className="tempo-control">
+            <label>BPM:</label>
+            <input
+              type="number"
+              value={tempo}
+              onChange={(e) => setTempo(Math.max(1, Number(e.target.value)))}
+              min="1"
+              max="300"
+            />
+            <button className="tap-btn" onClick={handleTapTempo}>
+              Tap
+            </button>
+          </div>
         </div>
         <div className="file-info">
           {midiInfo && <span className="info">MIDI: {midiInfo}</span>}
@@ -236,6 +285,7 @@ function App() {
             audioUrl={audioUrl}
             pixelsPerSecond={zoom}
             playbackSpeed={playbackSpeed}
+            tempo={tempo}
             onPlaybackEnd={() => setIsPlaying(false)}
             onActiveNotesChange={setActiveNotes}
           />
