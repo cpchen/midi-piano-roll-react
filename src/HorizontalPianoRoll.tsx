@@ -42,6 +42,12 @@ function getNoteName(note: number): string {
   return names[note % 12] + octave;
 }
 
+function formatTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
 function countWhiteKeys(minNote: number, maxNote: number): number {
   let count = 0;
   for (let n = minNote; n <= maxNote; n++) {
@@ -77,6 +83,8 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
     const [isLoading, setIsLoading] = useState(false);
     const [activeNotes, setActiveNotes] = useState<Set<number>>(new Set());
     const [containerWidth, setContainerWidth] = useState(800);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [totalTime, setTotalTime] = useState(0);
 
     const wavesurferRef = useRef<WaveSurfer | null>(null);
     const animationRef = useRef<number | null>(null);
@@ -134,19 +142,22 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
         container: waveformRef.current,
         waveColor: '#4ecca3',
         progressColor: '#e94560',
-        cursorColor: '#e94560',
-        cursorWidth: 3,
-        height: 100,
+        cursorColor: 'transparent', // Hide cursor - we use our own playhead
+        cursorWidth: 0,
+        height: 80,
         barWidth: 2,
         barGap: 1,
         barRadius: 2,
         normalize: true,
+        minPxPerSec: pixelsPerSecond, // Match piano roll scale
+        fillParent: false, // Don't stretch to fill - use actual duration
       });
 
       ws.load(audioUrl);
 
       ws.on('ready', () => {
         setIsLoading(false);
+        setTotalTime(ws.getDuration());
       });
 
       ws.on('error', (err) => {
@@ -164,7 +175,7 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
       return () => {
         ws.destroy();
       };
-    }, [audioUrl]);
+    }, [audioUrl, pixelsPerSecond]);
 
     // Update playback speed
     useEffect(() => {
@@ -327,6 +338,7 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
       if (!ws) return;
 
       const elapsed = ws.getCurrentTime();
+      setCurrentTime(elapsed);
       const x = elapsed * pixelsPerSecond;
       playheadRef.current.style.left = `${x}px`;
 
@@ -422,6 +434,7 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
       if (duration > 0) {
         const seekRatio = Math.max(0, Math.min(1, clickTime / duration));
         ws.seekTo(seekRatio);
+        setCurrentTime(clickTime);
 
         // Update playhead position
         if (playheadRef.current) {
@@ -439,6 +452,9 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
       }
     };
 
+    const waveformHeight = 80;
+    const totalScrollHeight = waveformHeight + rollHeight;
+
     return (
       <div
         ref={containerRef}
@@ -451,18 +467,7 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
           background: '#1a1a2e',
         }}
       >
-        {/* Waveform display */}
-        <div
-          ref={waveformRef}
-          style={{
-            width: '100%',
-            background: '#16213e',
-            borderBottom: '2px solid #0f3460',
-            flexShrink: 0,
-          }}
-        />
-
-        {/* Piano roll (scrolls left-to-right) */}
+        {/* Scrollable container for both waveform and piano roll */}
         <div
           ref={rollScrollRef}
           onScroll={handleRollScroll}
@@ -474,8 +479,24 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
             cursor: 'pointer',
           }}
         >
-          <div style={{ position: 'relative', width: rollWidth, height: rollHeight, minHeight: '100%' }}>
-            <canvas ref={rollCanvasRef} style={{ display: 'block' }} />
+          <div style={{ position: 'relative', width: rollWidth, minHeight: '100%' }}>
+            {/* Waveform display - inside scroll container */}
+            <div
+              ref={waveformRef}
+              style={{
+                width: rollWidth,
+                height: waveformHeight,
+                background: '#16213e',
+                borderBottom: '2px solid #0f3460',
+              }}
+            />
+
+            {/* Piano roll canvas */}
+            <div style={{ height: rollHeight }}>
+              <canvas ref={rollCanvasRef} style={{ display: 'block' }} />
+            </div>
+
+            {/* Single playhead spanning both waveform and piano roll */}
             <div
               ref={playheadRef}
               style={{
@@ -483,13 +504,30 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
                 top: 0,
                 left: 0,
                 width: 3,
-                height: '100%',
+                height: totalScrollHeight,
                 background: '#e94560',
                 boxShadow: '0 0 15px #e94560',
                 pointerEvents: 'none',
                 zIndex: 10,
               }}
             />
+          </div>
+          {/* Timestamp display */}
+          <div style={{
+            position: 'sticky',
+            left: 10,
+            top: 10,
+            display: 'inline-block',
+            background: 'rgba(0,0,0,0.7)',
+            padding: '6px 12px',
+            borderRadius: '6px',
+            fontFamily: 'monospace',
+            fontSize: '14px',
+            color: '#4ecca3',
+            zIndex: 20,
+            pointerEvents: 'none',
+          }}>
+            {formatTime(currentTime)} / {formatTime(totalTime)}
           </div>
           {isLoading && (
             <div style={{
