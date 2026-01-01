@@ -24,7 +24,7 @@ export function MusicNotation({ activeNotes, width = 300, height = 250 }: Props)
 
   useEffect(() => {
     const wrapper = wrapperRef.current;
-    if (!wrapper || activeNotes.length === 0) return;
+    if (!wrapper) return;
 
     // Create a fresh container div
     wrapper.innerHTML = '';
