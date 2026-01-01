@@ -1,0 +1,202 @@
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #1a1a2e;
+  color: #eee;
+}
+
+.header {
+  padding: 20px;
+  background: #16213e;
+  border-bottom: 1px solid #0f3460;
+}
+
+.header h1 {
+  font-size: 1.5rem;
+  margin-bottom: 15px;
+}
+
+.controls {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.file-input-wrapper {
+  position: relative;
+}
+
+.file-input-wrapper input[type='file'] {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.file-input-wrapper label {
+  display: inline-block;
+  padding: 10px 20px;
+  background: #e94560;
+  color: white;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.file-input-wrapper label:hover {
+  background: #ff6b6b;
+}
+
+.file-input-wrapper.audio label {
+  background: #4ecca3;
+}
+
+.file-input-wrapper.audio label:hover {
+  background: #7fff00;
+}
+
+.file-info {
+  margin-top: 10px;
+  display: flex;
+  gap: 20px;
+}
+
+button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.play-btn {
+  background: #4ecca3;
+  color: #1a1a2e;
+}
+
+.play-btn:hover {
+  background: #7fff00;
+}
+
+.play-btn:disabled {
+  background: #555;
+  cursor: not-allowed;
+}
+
+.pause-btn {
+  background: #ffd93d;
+  color: #1a1a2e;
+}
+
+.pause-btn:hover {
+  background: #ffe066;
+}
+
+.pause-btn:disabled {
+  background: #555;
+  color: #888;
+  cursor: not-allowed;
+}
+
+.stop-btn {
+  background: #ff6b6b;
+  color: white;
+}
+
+.stop-btn:hover {
+  background: #ee5a5a;
+}
+
+.speed-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.speed-control label {
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
+.speed-control select {
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 1px solid #0f3460;
+  background: #16213e;
+  color: #eee;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.speed-control select:hover {
+  border-color: #4ecca3;
+}
+
+.zoom-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zoom-control label {
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
+.zoom-control button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 18px;
+  font-weight: bold;
+  background: #16213e;
+  border: 1px solid #0f3460;
+}
+
+.zoom-control button:hover {
+  background: #1a4a7a;
+  border-color: #4ecca3;
+}
+
+.zoom-value {
+  min-width: 50px;
+  text-align: center;
+  font-size: 0.9rem;
+  color: #eee;
+}
+
+.info {
+  font-size: 0.9rem;
+  color: #888;
+}
+
+.piano-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  min-height: 500px;
+}
+
+.empty-state {
+  color: #666;
+  font-size: 1.2rem;
+  text-align: center;
+}
+
+.error {
+  color: #e94560;
+  font-size: 1rem;
+}
+
+.notation-container {
+  margin-top: 15px;
+  display: inline-block;
+  border-radius: 8px;
+  overflow: hidden;
+}
