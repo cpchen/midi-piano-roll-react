@@ -196,9 +196,19 @@ function App() {
           </div>
           <div className="zoom-control">
             <label>Zoom:</label>
-            <button onClick={() => setZoom(z => Math.max(25, z / 1.5))}>-</button>
-            <span className="zoom-value">{zoom.toFixed(0)}%</span>
-            <button onClick={() => setZoom(z => Math.min(400, z * 1.5))}>+</button>
+            <select
+              value={zoom}
+              onChange={(e) => setZoom(Number(e.target.value))}
+            >
+              <option value={25}>25%</option>
+              <option value={50}>50%</option>
+              <option value={75}>75%</option>
+              <option value={100}>100%</option>
+              <option value={150}>150%</option>
+              <option value={200}>200%</option>
+              <option value={300}>300%</option>
+              <option value={400}>400%</option>
+            </select>
           </div>
         </div>
         <div className="file-info">
