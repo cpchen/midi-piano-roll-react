@@ -1,9 +1,10 @@
 .app {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   background: #1a1a2e;
   color: #eee;
+  overflow: hidden;
 }
 
 .header {
@@ -111,6 +112,21 @@ button {
   background: #ee5a5a;
 }
 
+.export-btn {
+  background: #9b59b6;
+  color: white;
+}
+
+.export-btn:hover {
+  background: #a86cc1;
+}
+
+.export-btn:disabled {
+  background: #555;
+  color: #888;
+  cursor: not-allowed;
+}
+
 .speed-control {
   display: flex;
   align-items: center;
@@ -207,6 +223,41 @@ button {
   transform: scale(0.95);
 }
 
+.offset-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.offset-control label {
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
+.offset-control input {
+  width: 70px;
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 1px solid #0f3460;
+  background: #16213e;
+  color: #eee;
+  font-size: 14px;
+}
+
+.offset-control input:hover {
+  border-color: #4ecca3;
+}
+
+.offset-control input:focus {
+  outline: none;
+  border-color: #4ecca3;
+}
+
+.offset-unit {
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
 .info {
   font-size: 0.9rem;
   color: #888;
@@ -215,10 +266,15 @@ button {
 .piano-container {
   flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  min-height: 500px;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  min-height: 0;
+}
+
+.piano-container > * {
+  flex: 1;
+  width: 100%;
 }
 
 .empty-state {
@@ -230,6 +286,31 @@ button {
 .error {
   color: #e94560;
   font-size: 1rem;
+}
+
+.subdivision-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.subdivision-control label {
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
+.subdivision-control select {
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 1px solid #0f3460;
+  background: #16213e;
+  color: #eee;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.subdivision-control select:hover {
+  border-color: #4ecca3;
 }
 
 .notation-container {

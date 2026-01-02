@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import * as Tone from 'tone';
 import WaveSurfer from 'wavesurfer.js';
 
@@ -21,10 +21,27 @@ interface Props {
   pixelsPerSecond?: number;
   playbackSpeed?: number;
   tempo?: number;
-  minNote?: number;
-  maxNote?: number;
+  offset?: number;
+  subdivision?: string;
   onPlaybackEnd?: () => void;
   onActiveNotesChange?: (notes: number[]) => void;
+  onOffsetChange?: (offset: number) => void;
+  onNotesChange?: (notes: Note[]) => void;
+}
+
+// Convert subdivision string to beats multiplier
+function getSubdivisionBeats(subdivision: string): number {
+  switch (subdivision) {
+    case '1/1': return 4;
+    case '1/2': return 2;
+    case '1/4': return 1;
+    case '1/8': return 0.5;
+    case '1/8T': return 1/3;
+    case '1/16': return 0.25;
+    case '1/16T': return 1/6;
+    case '1/32': return 0.125;
+    default: return 0.5;
+  }
 }
 
 const NOTE_COLORS = [
@@ -70,8 +87,10 @@ function getNoteX(note: number, minNote: number, whiteKeyWidth: number): number 
   return x;
 }
 
-export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
-  ({ notes, audioUrl, pixelsPerSecond = 100, playbackSpeed = 1, tempo = 120, minNote = 21, maxNote = 108, onPlaybackEnd, onActiveNotesChange }, ref) => {
+export const HorizontalPianoRoll = forwardRef(function HorizontalPianoRollComponent(
+  { notes, audioUrl, pixelsPerSecond = 100, playbackSpeed = 1, tempo = 120, offset = 0, subdivision = '1/8', onPlaybackEnd, onActiveNotesChange, onOffsetChange, onNotesChange }: Props,
+  ref: React.ForwardedRef<HorizontalPianoRollHandle>
+) {
     const rollCanvasRef = useRef<HTMLCanvasElement>(null);
     const keysCanvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -84,11 +103,30 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
     const [isLoading, setIsLoading] = useState(false);
     const [activeNotes, setActiveNotes] = useState<Set<number>>(new Set());
     const [containerWidth, setContainerWidth] = useState(800);
+    const [containerHeight, setContainerHeight] = useState(500);
     const [currentTime, setCurrentTime] = useState(0);
     const [totalTime, setTotalTime] = useState(0);
+    const [selectedNoteIndices, setSelectedNoteIndices] = useState<Set<number>>(new Set());
+    const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+    const [dragEnd, setDragEnd] = useState<{ x: number; y: number } | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
 
     const wavesurferRef = useRef<WaveSurfer | null>(null);
     const animationRef = useRef<number | null>(null);
+    const notesRef = useRef(notes);
+
+    // Keep notesRef in sync with notes prop
+    useEffect(() => {
+      notesRef.current = notes;
+    }, [notes]);
+
+    // Calculate note range from actual notes (with padding)
+    const pitches = notes.map(n => n.pitch);
+    const minNotePitch = pitches.length > 0 ? Math.min(...pitches) : 60;
+    const maxNotePitch = pitches.length > 0 ? Math.max(...pitches) : 72;
+    // Add some padding (at least 2 notes on each side, round to octave boundaries for cleaner display)
+    const minNote = Math.max(21, Math.floor((minNotePitch - 2) / 12) * 12);
+    const maxNote = Math.min(108, Math.ceil((maxNotePitch + 2) / 12) * 12 + 11);
 
     const whiteKeyCount = countWhiteKeys(minNote, maxNote);
 
@@ -97,10 +135,14 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
     const WHITE_KEY_HEIGHT = 180;
     const BLACK_KEY_WIDTH = WHITE_KEY_WIDTH * 0.6;
     const BLACK_KEY_HEIGHT = 110;
-    const NOTE_HEIGHT = 8;
+
+    // Calculate NOTE_HEIGHT to fill available space (container height minus waveform and keyboard)
+    const totalNotes = maxNote - minNote + 1;
+    const waveformHeight = 80;
+    const availableHeight = containerHeight - waveformHeight - WHITE_KEY_HEIGHT - 3; // 3 for border
+    const NOTE_HEIGHT = Math.max(4, Math.floor(availableHeight / totalNotes));
 
     const keyboardWidth = containerWidth;
-    const totalNotes = maxNote - minNote + 1;
     const rollHeight = totalNotes * NOTE_HEIGHT;
 
     const duration = notes.length > 0
@@ -108,18 +150,19 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
       : 0;
     const rollWidth = Math.max(duration * pixelsPerSecond + 400, 800);
 
-    // Track container width for keyboard scaling
+    // Track container size for scaling
     useEffect(() => {
       const container = containerRef.current;
       if (!container) return;
 
-      const updateWidth = () => {
+      const updateSize = () => {
         setContainerWidth(container.clientWidth);
+        setContainerHeight(container.clientHeight);
       };
 
-      updateWidth();
+      updateSize();
 
-      const resizeObserver = new ResizeObserver(updateWidth);
+      const resizeObserver = new ResizeObserver(updateSize);
       resizeObserver.observe(container);
 
       return () => resizeObserver.disconnect();
@@ -281,25 +324,58 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
         ctx.stroke();
       }
 
-      // Draw vertical beat lines based on tempo
+      // Draw vertical grid lines based on tempo, offset, and subdivision
       const secondsPerBeat = 60 / tempo;
       const beatsPerBar = 4;
-      for (let beat = 0; beat * secondsPerBeat < duration + 4; beat++) {
-        const t = beat * secondsPerBeat;
-        const x = t * pixelsPerSecond;
-        const isBar = beat % beatsPerBar === 0;
+      const subdivBeats = getSubdivisionBeats(subdivision);
+      const secondsPerSubdiv = secondsPerBeat * subdivBeats;
 
-        ctx.strokeStyle = isBar ? '#3a3a6e' : '#2a2a4e';
-        ctx.lineWidth = isBar ? 2 : 1;
+      // Calculate how many subdivisions to go back before offset
+      const subdivsBeforeOffset = Math.ceil(offset / secondsPerSubdiv) + 1;
+
+      // Draw subdivision lines (including before the downbeat for pickup notes)
+      for (let subdiv = -subdivsBeforeOffset; ; subdiv++) {
+        const t = offset + subdiv * secondsPerSubdiv;
+        if (t > duration + 4) break;
+        if (t < 0) continue;
+
+        const x = t * pixelsPerSecond;
+        const beatNum = subdiv * subdivBeats;
+        const isBar = Math.abs(beatNum % beatsPerBar) < 0.001;
+        const isBeat = Math.abs(beatNum % 1) < 0.001;
+
+        if (isBar) {
+          ctx.strokeStyle = '#3a3a6e';
+          ctx.lineWidth = 2;
+        } else if (isBeat) {
+          ctx.strokeStyle = '#2a2a4e';
+          ctx.lineWidth = 1;
+        } else {
+          ctx.strokeStyle = '#222244';
+          ctx.lineWidth = 1;
+        }
         ctx.beginPath();
         ctx.moveTo(x, 0);
         ctx.lineTo(x, rollHeight);
         ctx.stroke();
+
+        // Draw bar numbers and beat labels
+        if (isBar) {
+          const barNum = Math.floor(beatNum / beatsPerBar) + 1;
+          ctx.fillStyle = '#888';
+          ctx.font = 'bold 11px sans-serif';
+          ctx.fillText(`${barNum}`, x + 4, 14);
+        } else if (isBeat) {
+          const beatInBar = Math.floor(beatNum % beatsPerBar) + 1;
+          ctx.fillStyle = '#555';
+          ctx.font = '10px sans-serif';
+          ctx.fillText(`${beatInBar}`, x + 3, 14);
+        }
       }
       ctx.lineWidth = 1;
 
       // Draw notes
-      notes.forEach((note) => {
+      notes.forEach((note, index) => {
         if (note.pitch < minNote || note.pitch > maxNote) return;
 
         const x = note.startTime * pixelsPerSecond;
@@ -307,7 +383,8 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
         const y = noteIdx * NOTE_HEIGHT;
         const w = Math.max(note.duration * pixelsPerSecond, 6);
         const h = NOTE_HEIGHT - 1;
-        const color = NOTE_COLORS[note.pitch % NOTE_COLORS.length];
+        const isSelected = selectedNoteIndices.has(index);
+        const color = isSelected ? '#ffffff' : NOTE_COLORS[note.pitch % NOTE_COLORS.length];
 
         const gradient = ctx.createLinearGradient(x, y, x, y + h);
         gradient.addColorStop(0, adjustColor(color, 30));
@@ -318,13 +395,13 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
         ctx.roundRect(x + 1, y, w - 2, h, 3);
         ctx.fill();
 
-        ctx.strokeStyle = adjustColor(color, 50);
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = isSelected ? '#4ecca3' : adjustColor(color, 50);
+        ctx.lineWidth = isSelected ? 2 : 1;
         ctx.beginPath();
         ctx.roundRect(x + 1, y, w - 2, h, 3);
         ctx.stroke();
       });
-    }, [notes, rollWidth, rollHeight, totalNotes, minNote, maxNote, pixelsPerSecond, duration, tempo]);
+    }, [notes, rollWidth, rollHeight, totalNotes, minNote, maxNote, pixelsPerSecond, duration, tempo, offset, subdivision, selectedNoteIndices]);
 
     function adjustColor(hex: string, amount: number): string {
       const num = parseInt(hex.slice(1), 16);
@@ -418,44 +495,216 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
       };
     }, []);
 
+    // Keyboard handling for moving selected notes and quantize
+    useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (selectedNoteIndices.size === 0 || !onNotesChange) return;
+
+        const secondsPerBeat = 60 / tempo;
+        const subdivBeats = getSubdivisionBeats(subdivision);
+        const secondsPerSubdiv = secondsPerBeat * subdivBeats;
+
+        // Quantize: Q key
+        if (e.key === 'q' || e.key === 'Q') {
+          e.preventDefault();
+          const currentNotes = notesRef.current;
+          const newNotes = [...currentNotes];
+          selectedNoteIndices.forEach((idx) => {
+            const note = { ...newNotes[idx] };
+            const gridPosition = Math.round((note.startTime - offset) / secondsPerSubdiv);
+            note.startTime = Math.max(0, offset + gridPosition * secondsPerSubdiv);
+            newNotes[idx] = note;
+          });
+          onNotesChange(newNotes);
+          return;
+        }
+
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          const direction = e.key === 'ArrowLeft' ? -1 : 1;
+          const currentNotes = notesRef.current;
+          const newNotes = [...currentNotes];
+          selectedNoteIndices.forEach((idx) => {
+            const note = { ...newNotes[idx] };
+            note.startTime = Math.max(0, note.startTime + direction * secondsPerSubdiv);
+            const gridPosition = Math.round((note.startTime - offset) / secondsPerSubdiv);
+            note.startTime = offset + gridPosition * secondsPerSubdiv;
+            newNotes[idx] = note;
+          });
+          onNotesChange(newNotes);
+        }
+
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          const direction = e.key === 'ArrowUp' ? 1 : -1;
+          const currentNotes = notesRef.current;
+          const newNotes = [...currentNotes];
+          selectedNoteIndices.forEach((idx) => {
+            const note = { ...newNotes[idx] };
+            note.pitch = Math.max(minNote, Math.min(maxNote, note.pitch + direction));
+            newNotes[idx] = note;
+          });
+          onNotesChange(newNotes);
+        }
+
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          const currentNotes = notesRef.current;
+          const newNotes = currentNotes.filter((_, i) => !selectedNoteIndices.has(i));
+          setSelectedNoteIndices(new Set());
+          onNotesChange(newNotes);
+        }
+
+        if (e.key === 'Escape') {
+          setSelectedNoteIndices(new Set());
+        }
+
+        // Select all: Ctrl/Cmd+A
+        if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+          e.preventDefault();
+          setSelectedNoteIndices(new Set(notes.map((_, i) => i)));
+        }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedNoteIndices, notes, tempo, subdivision, offset, onNotesChange, minNote, maxNote]);
+
     // Sync scroll between roll and keyboard
     const handleRollScroll = () => {
       // No sync needed - keyboard is independent
     };
 
-    // Click to seek
-    const handleRollClick = (e: React.MouseEvent<HTMLDivElement>) => {
-      const ws = wavesurferRef.current;
-      if (!ws) return;
+    // Enable horizontal scrolling with mouse wheel
+    const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+      if (!rollScrollRef.current) return;
 
-      const rect = e.currentTarget.getBoundingClientRect();
-      const scrollLeft = rollScrollRef.current?.scrollLeft || 0;
-      const clickX = e.clientX - rect.left + scrollLeft;
-      const clickTime = clickX / pixelsPerSecond;
-      const duration = ws.getDuration();
+      // If there's horizontal scroll (trackpad, shift+wheel), let it work naturally
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        return; // Let native horizontal scroll happen
+      }
 
-      if (duration > 0) {
-        const seekRatio = Math.max(0, Math.min(1, clickTime / duration));
-        ws.seekTo(seekRatio);
-        setCurrentTime(clickTime);
-
-        // Update playhead position
-        if (playheadRef.current) {
-          playheadRef.current.style.left = `${clickTime * pixelsPerSecond}px`;
-        }
-
-        // Update active notes for the new position
-        const active = new Set<number>();
-        notes.forEach((note) => {
-          if (clickTime >= note.startTime && clickTime < note.startTime + note.duration) {
-            active.add(note.pitch);
-          }
-        });
-        setActiveNotes(active);
+      // Convert vertical scroll to horizontal
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        rollScrollRef.current.scrollLeft += e.deltaY;
       }
     };
 
-    const waveformHeight = 80;
+    // Find note at click position
+    const findNoteAtPosition = (clickX: number, clickY: number): number => {
+      return notes.findIndex((note) => {
+        if (note.pitch < minNote || note.pitch > maxNote) return false;
+        const noteX = note.startTime * pixelsPerSecond;
+        const noteIdx = maxNote - note.pitch;
+        const noteY = noteIdx * NOTE_HEIGHT;
+        const noteW = Math.max(note.duration * pixelsPerSecond, 6);
+        const noteH = NOTE_HEIGHT - 1;
+        return clickX >= noteX && clickX <= noteX + noteW && clickY >= noteY && clickY <= noteY + noteH;
+      });
+    };
+
+    // Get position relative to piano roll canvas
+    const getCanvasPosition = (e: React.MouseEvent<HTMLDivElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const scrollLeft = rollScrollRef.current?.scrollLeft || 0;
+      const scrollTop = rollScrollRef.current?.scrollTop || 0;
+      return {
+        x: e.clientX - rect.left + scrollLeft,
+        y: e.clientY - rect.top + scrollTop - 80, // Subtract waveform height
+      };
+    };
+
+    // Find notes within a rectangle
+    const findNotesInRect = (x1: number, y1: number, x2: number, y2: number): Set<number> => {
+      const minX = Math.min(x1, x2);
+      const maxX = Math.max(x1, x2);
+      const minY = Math.min(y1, y2);
+      const maxY = Math.max(y1, y2);
+
+      const selected = new Set<number>();
+      notes.forEach((note, index) => {
+        if (note.pitch < minNote || note.pitch > maxNote) return;
+        const noteX = note.startTime * pixelsPerSecond;
+        const noteIdx = maxNote - note.pitch;
+        const noteY = noteIdx * NOTE_HEIGHT;
+        const noteW = Math.max(note.duration * pixelsPerSecond, 6);
+        const noteH = NOTE_HEIGHT - 1;
+
+        // Check if note rectangle intersects with selection rectangle
+        if (noteX + noteW >= minX && noteX <= maxX && noteY + noteH >= minY && noteY <= maxY) {
+          selected.add(index);
+        }
+      });
+      return selected;
+    };
+
+    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+      const pos = getCanvasPosition(e);
+
+      // Shift+click: set note as downbeat
+      const clickedNoteIndex = findNoteAtPosition(pos.x, pos.y);
+      if (e.shiftKey && onOffsetChange && clickedNoteIndex !== -1) {
+        onOffsetChange(notes[clickedNoteIndex].startTime);
+        return;
+      }
+
+      // Click on note: select it (Ctrl/Cmd to add to selection)
+      if (clickedNoteIndex !== -1) {
+        if (e.ctrlKey || e.metaKey) {
+          const newSelected = new Set(selectedNoteIndices);
+          if (newSelected.has(clickedNoteIndex)) {
+            newSelected.delete(clickedNoteIndex);
+          } else {
+            newSelected.add(clickedNoteIndex);
+          }
+          setSelectedNoteIndices(newSelected);
+        } else {
+          setSelectedNoteIndices(new Set([clickedNoteIndex]));
+        }
+        return;
+      }
+
+      // Start drag selection on empty space
+      setDragStart(pos);
+      setDragEnd(pos);
+      setIsDragging(true);
+    };
+
+    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!isDragging || !dragStart) return;
+      const pos = getCanvasPosition(e);
+      setDragEnd(pos);
+    };
+
+    const handleMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
+      if (isDragging && dragStart && dragEnd) {
+        const selected = findNotesInRect(dragStart.x, dragStart.y, dragEnd.x, dragEnd.y);
+        if (selected.size > 0) {
+          setSelectedNoteIndices(selected);
+        } else {
+          // No notes selected, seek to click position
+          const clickTime = dragStart.x / pixelsPerSecond;
+          const ws = wavesurferRef.current;
+          if (ws) {
+            const duration = ws.getDuration();
+            if (duration > 0) {
+              const seekRatio = Math.max(0, Math.min(1, clickTime / duration));
+              ws.seekTo(seekRatio);
+              setCurrentTime(clickTime);
+              if (playheadRef.current) {
+                playheadRef.current.style.left = `${clickTime * pixelsPerSecond}px`;
+              }
+            }
+          }
+          setSelectedNoteIndices(new Set());
+        }
+      }
+      setIsDragging(false);
+      setDragStart(null);
+      setDragEnd(null);
+    };
+
     const totalScrollHeight = waveformHeight + rollHeight;
 
     return (
@@ -474,15 +723,19 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
         <div
           ref={rollScrollRef}
           onScroll={handleRollScroll}
-          onClick={handleRollClick}
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
           style={{
             flex: 1,
             overflow: 'auto',
             position: 'relative',
-            cursor: 'pointer',
+            cursor: isDragging ? 'crosshair' : 'pointer',
           }}
         >
-          <div style={{ position: 'relative', width: rollWidth, minHeight: '100%' }}>
+          <div style={{ position: 'relative', width: rollWidth }}>
             {/* Waveform display - inside scroll container */}
             <div
               ref={waveformRef}
@@ -514,39 +767,57 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
                 zIndex: 10,
               }}
             />
-          </div>
-          {/* Timestamp display */}
-          <div style={{
-            position: 'sticky',
-            left: 10,
-            top: 10,
-            display: 'inline-block',
-            background: 'rgba(0,0,0,0.7)',
-            padding: '6px 12px',
-            borderRadius: '6px',
-            fontFamily: 'monospace',
-            fontSize: '14px',
-            color: '#4ecca3',
-            zIndex: 20,
-            pointerEvents: 'none',
-          }}>
-            {formatTime(currentTime)} / {formatTime(totalTime)}
-          </div>
-          {isLoading && (
+
+            {/* Selection rectangle */}
+            {isDragging && dragStart && dragEnd && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: Math.min(dragStart.x, dragEnd.x),
+                  top: Math.min(dragStart.y, dragEnd.y) + 80, // Add waveform height
+                  width: Math.abs(dragEnd.x - dragStart.x),
+                  height: Math.abs(dragEnd.y - dragStart.y),
+                  background: 'rgba(78, 204, 163, 0.2)',
+                  border: '1px solid #4ecca3',
+                  pointerEvents: 'none',
+                  zIndex: 15,
+                }}
+              />
+            )}
+
+            {/* Timestamp display */}
             <div style={{
               position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              color: '#4ecca3',
-              fontSize: '1.2rem',
+              left: 10,
+              top: 10,
               background: 'rgba(0,0,0,0.7)',
-              padding: '20px 40px',
-              borderRadius: '10px',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontFamily: 'monospace',
+              fontSize: '14px',
+              color: '#4ecca3',
+              zIndex: 20,
+              pointerEvents: 'none',
             }}>
-              Loading audio...
+              {formatTime(currentTime)} / {formatTime(totalTime)}
             </div>
-          )}
+
+            {isLoading && (
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                color: '#4ecca3',
+                fontSize: '1.2rem',
+                background: 'rgba(0,0,0,0.7)',
+                padding: '20px 40px',
+                borderRadius: '10px',
+              }}>
+                Loading audio...
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Horizontal keyboard at bottom - scaled to fit */}
@@ -566,5 +837,3 @@ export const HorizontalPianoRoll = forwardRef<HorizontalPianoRollHandle, Props>(
     );
   }
 );
-
-HorizontalPianoRoll.displayName = 'HorizontalPianoRoll';
